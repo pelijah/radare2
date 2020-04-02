@@ -803,6 +803,17 @@ repeat:
 					gotoBeach (R_ANAL_RET_END);
 				}
 			}
+			if (op.jump == op.addr + op.size) {
+				// Follow reloc in COFF
+				RBinReloc *rel = (RBinReloc *)anal->coreb.getReloc (anal->coreb.core, op.addr, op.size);
+				if (rel && rel->symbol) {
+					if (!strcmp (rel->symbol->type, "EXTERNAL")) {
+						eprintf ("EXTernal jump to %s from 0x%"PFMT64x "\n", rel->symbol->name, op.addr);
+						gotoBeach (R_ANAL_RET_END);
+					}
+					op.jump = rel->symbol->vaddr;
+				}
+			}
 			if (r_cons_is_breaked ()) {
 				gotoBeach (R_ANAL_RET_END);
 			}
@@ -950,6 +961,17 @@ repeat:
 			break;
 		case R_ANAL_OP_TYPE_CCALL:
 		case R_ANAL_OP_TYPE_CALL:
+			if (op.jump == op.addr + op.size) {
+				// Follow reloc in COFF
+				RBinReloc *rel = (RBinReloc *)anal->coreb.getReloc(anal->coreb.core, op.addr, op.size);
+				if (rel && rel->symbol) {
+					if (!strcmp(rel->symbol->type, "EXTERNAL")) {
+						eprintf("EXTernal call to %s from 0x%"PFMT64x "\n", rel->symbol->name, op.addr);
+						gotoBeach(R_ANAL_RET_NOP);
+					}
+					op.jump = rel->symbol->vaddr;
+				}
+			}
 			/* call dst */
 			(void) r_anal_xrefs_set (anal, op.addr, op.jump, R_ANAL_REF_TYPE_CALL);
 

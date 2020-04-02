@@ -22,6 +22,7 @@ typedef void (*RCoreSeekArchBits)(void *core, ut64 addr);
 typedef int (*RCoreConfigGetI)(void *core, const char *key);
 typedef const char *(*RCoreConfigGet)(void *core, const char *key);
 typedef ut64 (*RCoreNumGet)(void *core, const char *str);
+typedef void* (*RCoreGetReloc)(void *core, ut64 addr, int size);
 
 typedef struct r_core_bind_t {
 	void *core;
@@ -41,6 +42,7 @@ typedef struct r_core_bind_t {
 	RCoreNumGet numGet;
 	RCoreIsMapped isMapped;
 	RCoreDebugMapsSync syncDebugMaps;
+	RCoreGetReloc getReloc;
 } RCoreBind;
 
 #endif

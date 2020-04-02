@@ -330,6 +330,7 @@ R_API int r_core_bind(RCore *core, RCoreBind *bnd) {
 	bnd->numGet = (RCoreNumGet)numget;
 	bnd->isMapped = (RCoreIsMapped)__isMapped;
 	bnd->syncDebugMaps = (RCoreDebugMapsSync)__syncDebugMaps;
+	bnd->getReloc = (RCoreGetReloc)r_core_getreloc;
 	return true;
 }
 
