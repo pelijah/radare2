@@ -1111,6 +1111,8 @@ typedef struct r_anal_esil_t {
 	/* deep esil parsing fills this */
 	Sdb *stats;
 	Sdb *db_trace;
+#define ONLY_TRACE_VEC 1
+	RPVector trace_vec;
 	int trace_idx;
 	RAnalEsilCallbacks cb;
 	RAnalReil *Reil;

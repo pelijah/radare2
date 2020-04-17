@@ -296,13 +296,20 @@ static RList *parse_format(RCore *core, char *fmt) {
 #define REGNAME_SIZE 10
 #define MAX_INSTR 5
 
-static void type_match(RCore *core, char *fcn_name, ut64 addr, ut64 baddr, const char* cc,
+static void type_match(RCore *core, ut64 addr, char *fcn_name, ut64 baddr, const char* cc,
 		int prev_idx, bool userfnc, ut64 caddr) {
 	Sdb *trace = core->anal->esil->db_trace;
 	Sdb *TDB = core->anal->sdb_types;
 	RAnal *anal = core->anal;
 	RList *types = NULL;
+#if ONLY_TRACE_VEC
+	int idx = r_pvector_len (&core->anal->esil->trace_vec) - 1;
+#else
 	int idx = sdb_num_get (trace, "idx", 0);
+	if (idx != r_pvector_len (&core->anal->esil->trace_vec) - 1) {
+		eprintf ("FUCK: sdb idx (%d) != vec last idx (%d)\n", idx, r_pvector_len (&core->anal->esil->trace_vec) - 1);
+	}
+#endif
 	bool verbose = r_config_get_i (core->config, "anal.types.verbose");
 	bool stack_rev = false, in_stack = false, format = false;
 
@@ -356,20 +363,49 @@ static void type_match(RCore *core, char *fcn_name, ut64 addr, ut64 baddr, const
 		bool res = false;
 		// Backtrace instruction from source sink to prev source sink
 		for (j = idx; j >= prev_idx; j--) {
+#if ONLY_TRACE_VEC
+			if (j >= r_pvector_len (&anal->esil->trace_vec)) {
+				//eprintf("WTF?! j=%d; len=%d; addr=0x%016x\n", j, r_pvector_len(&anal->esil->trace_vec),  0);
+				break;
+			}
+#else
 			ut64 instr_addr = sdb_num_get (trace, sdb_fmt ("%d.addr", j), 0);
+			if (j >= r_pvector_len (&anal->esil->trace_vec)) {
+				eprintf("WTF?! j=%d; len=%d; addr=0x%016x\n", j, r_pvector_len(&anal->esil->trace_vec),  instr_addr);
+				break;
+			}
+			RAnalOp *test = r_pvector_at (&anal->esil->trace_vec, j);
+			if (!test) {
+				eprintf("WTF?! j=%d; addr=0x%016x\n", j, instr_addr);
+				break;
+			}
+			if (test->addr != instr_addr) {
+				eprintf ("FUCK! %d\n", j);
+			}
 			if (instr_addr < baddr) {
 				break;
 			}
-			RAnalOp *op = r_core_anal_op (core, instr_addr, R_ANAL_OP_MASK_BASIC | R_ANAL_OP_MASK_VAL);
+#endif
+			/*RAnalOp *op = r_core_anal_op (core, instr_addr, R_ANAL_OP_MASK_BASIC | R_ANAL_OP_MASK_VAL);
 			if (!op) {
 				r_anal_op_free (op);
 				break;
+			}*/
+			RAnalOp *op = r_pvector_at(&anal->esil->trace_vec, j);
+			//RAnalOp *next_op = r_core_anal_op (core, instr_addr + op->size, R_ANAL_OP_MASK_BASIC | R_ANAL_OP_MASK_VAL);
+			RAnalOp *next_op;
+			bool free_next_op = false;
+			if ((j + 1) >= r_pvector_len(&anal->esil->trace_vec)) {
+				next_op = r_core_anal_op(core, op->addr + op->size, R_ANAL_OP_MASK_BASIC | R_ANAL_OP_MASK_VAL);
+				free_next_op = true;
 			}
-			RAnalOp *next_op = r_core_anal_op (core, instr_addr + op->size, R_ANAL_OP_MASK_BASIC | R_ANAL_OP_MASK_VAL);
+			else {
+				next_op = r_pvector_at(&anal->esil->trace_vec, j + 1);
+			}
 			if (!next_op || (j != idx && (next_op->type == R_ANAL_OP_TYPE_CALL
 							|| next_op->type == R_ANAL_OP_TYPE_JMP))) {
-				r_anal_op_free (op);
-				r_anal_op_free (next_op);
+				//r_anal_op_free (op);
+				if (free_next_op) r_anal_op_free (next_op);
 				break;
 			}
 			const char *key = NULL;
@@ -386,7 +422,7 @@ static void type_match(RCore *core, char *fcn_name, ut64 addr, ut64 baddr, const
 			// Match type from function param to instr
 			if (type_pos_hit (anal, trace, in_stack, j, size, place)) {
 				if (!cmt_set && type && name) {
-					r_meta_set_string (anal, R_META_TYPE_VARTYPE, instr_addr,
+					r_meta_set_string (anal, R_META_TYPE_VARTYPE, op->addr,
 							sdb_fmt ("%s%s%s", type, r_str_endswith (type, "*") ? "" : " ", name));
 					cmt_set = true;
 					if ((op->ptr && op->ptr != UT64_MAX) && !strcmp (name, "format")) {
@@ -406,7 +442,7 @@ static void type_match(RCore *core, char *fcn_name, ut64 addr, ut64 baddr, const
 				}
 				if (var) {
 					if (!userfnc) {
-						__var_retype (anal, var, name, type, memref, false);
+						__var_retype (anal, var, name, type, addr, memref, false);
 						__var_rename (anal, var, name, addr);
 					} else {
 						// Set callee argument info
@@ -414,7 +450,7 @@ static void type_match(RCore *core, char *fcn_name, ut64 addr, ut64 baddr, const
 					}
 					res = true;
 				} else {
-					get_src_regname (core, instr_addr, regname, sizeof (regname));
+					get_src_regname (core, op->addr, regname, sizeof (regname));
 					xaddr = get_addr (trace, regname, j);
 				}
 			}
@@ -422,7 +458,7 @@ static void type_match(RCore *core, char *fcn_name, ut64 addr, ut64 baddr, const
 			if (!res && *regname && SDB_CONTAINS (j, regname)) {
 				if (var) {
 					if (!userfnc) {
-						__var_retype (anal, var, name, type, memref, false);
+						__var_retype (anal, var, name, type, addr, memref, false);
 						__var_rename (anal, var, name, addr);
 					} else {
 						sdb_set (anal->sdb_fcns, key, var->type, 0);
@@ -432,7 +468,7 @@ static void type_match(RCore *core, char *fcn_name, ut64 addr, ut64 baddr, const
 					switch (op->type) {
 					case R_ANAL_OP_TYPE_MOV:
 					case R_ANAL_OP_TYPE_PUSH:
-						get_src_regname (core, instr_addr, regname, sizeof (regname));
+						get_src_regname (core, op->addr, regname, sizeof (regname));
 						break;
 					case R_ANAL_OP_TYPE_LEA:
 					case R_ANAL_OP_TYPE_LOAD:
@@ -443,14 +479,14 @@ static void type_match(RCore *core, char *fcn_name, ut64 addr, ut64 baddr, const
 				}
 			} else if (var && res && xaddr && (xaddr != UT64_MAX)) { // Type progation using value
 				char tmp[REGNAME_SIZE] = {0};
-				get_src_regname (core, instr_addr, tmp, sizeof (tmp));
+				get_src_regname (core, op->addr, tmp, sizeof (tmp));
 				ut64 ptr = get_addr (trace, tmp, j);
 				if (ptr == xaddr) {
-					__var_retype (anal, var, name, type? type: "int", memref, false);
+					__var_retype (anal, var, name, type? type: "int", addr, memref, false);
 				}
 			}
-			r_anal_op_free (op);
-			r_anal_op_free (next_op);
+			//r_anal_op_free (op);
+			if (free_next_op) r_anal_op_free(next_op);
 		}
 		size += anal->bits / 8;
 		free (type);
@@ -484,6 +520,9 @@ R_API void r_core_anal_type_match(RCore *core, RAnalFunction *fcn) {
 	const int mininstrsz = r_anal_archinfo (anal, R_ANAL_ARCHINFO_MIN_OP_SIZE);
 	const int minopcode = R_MAX (1, mininstrsz);
 	int cur_idx , prev_idx = anal->esil->trace_idx;
+	/*if (cur_idx != r_pvector_len (&core->anal->esil->trace_vec) - 1) {
+		eprintf ("FUCK1: trace_idx (%d) != vec last idx (%d)\n", cur_idx, r_pvector_len (&core->anal->esil->trace_vec) - 1);
+	}*/
 	RConfigHold *hc = r_config_hold_new (core->config);
 	if (!hc) {
 		return;
@@ -553,7 +592,14 @@ R_API void r_core_anal_type_match(RCore *core, RAnalFunction *fcn) {
 			}
 			bool userfnc = false;
 			Sdb *trace = anal->esil->db_trace;
+#if ONLY_TRACE_VEC
+			cur_idx = r_pvector_len (&core->anal->esil->trace_vec) - 1;
+			if (cur_idx < 0) cur_idx = 0;
+#else
 			cur_idx = sdb_num_get (trace, "idx", 0);
+			if (cur_idx != r_pvector_len (&core->anal->esil->trace_vec) - 1) {
+				eprintf ("FUCK2: sdb idx (%d) != vec last idx (%d)\n", cur_idx, r_pvector_len (&core->anal->esil->trace_vec) - 1);
+			}
 			RAnalVar *var = r_anal_get_used_function_var (anal, aop.addr);
 			RAnalOp *next_op = r_core_anal_op (core, addr + ret, R_ANAL_OP_MASK_BASIC); // | _VAL ?
 			ut32 type = aop.type & R_ANAL_OP_TYPE_MASK;
@@ -624,7 +670,7 @@ R_API void r_core_anal_type_match(RCore *core, RAnalFunction *fcn) {
 				get_src_regname (core, aop.addr, src, sizeof (src));
 				if (ret_reg && *src && strstr (ret_reg, src)) {
 					if (var && aop.direction == R_ANAL_OP_DIR_WRITE) {
-						__var_retype (anal, var, NULL, ret_type, false, false);
+						__var_retype (anal, var, NULL, ret_type, addr, false, false);
 						resolved = true;
 					} else if (type == R_ANAL_OP_TYPE_MOV) {
 						R_FREE (ret_reg);
@@ -785,6 +831,7 @@ R_API void r_core_anal_type_match(RCore *core, RAnalFunction *fcn) {
 			}
 		}
 		free (type);
+		r_anal_var_free (lvar);
 	}
 	r_list_free (list);
 	// Type propgation from caller to callee function for stack based arguments

@@ -107,8 +107,13 @@ R_API void r_anal_esil_trace (RAnalEsil *esil, RAnalOp *op) {
 	if (!DB) {
 		DB = sdb_new0 ();
 	}
+#if ONLY_TRACE_VEC
+	r_pvector_push (&esil->trace_vec, op);
+#else
 	sdb_num_set (DB, "idx", esil->trace_idx, 0);
 	sdb_num_set (DB, KEY ("addr"), op->addr, 0);
+	r_pvector_push (&esil->trace_vec, op);
+#endif
 //	sdb_set (DB, KEY ("opcode"), op->mnemonic, 0);
 //	sdb_set (DB, KEY ("addr"), expr, 0);
 
