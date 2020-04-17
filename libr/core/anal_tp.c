@@ -368,18 +368,19 @@ static void type_match(RCore *core, ut64 addr, char *fcn_name, ut64 baddr, const
 				//eprintf("WTF?! j=%d; len=%d; addr=0x%016x\n", j, r_pvector_len(&anal->esil->trace_vec),  0);
 				break;
 			}
+			RAnalOp *op = r_pvector_at(&anal->esil->trace_vec, j);
 #else
 			ut64 instr_addr = sdb_num_get (trace, sdb_fmt ("%d.addr", j), 0);
 			if (j >= r_pvector_len (&anal->esil->trace_vec)) {
 				eprintf("WTF?! j=%d; len=%d; addr=0x%016x\n", j, r_pvector_len(&anal->esil->trace_vec),  instr_addr);
 				break;
 			}
-			RAnalOp *test = r_pvector_at (&anal->esil->trace_vec, j);
-			if (!test) {
+			RAnalOp *op = r_pvector_at(&anal->esil->trace_vec, j);
+			if (!op) {
 				eprintf("WTF?! j=%d; addr=0x%016x\n", j, instr_addr);
 				break;
 			}
-			if (test->addr != instr_addr) {
+			if (op->addr != instr_addr) {
 				eprintf ("FUCK! %d\n", j);
 			}
 			if (instr_addr < baddr) {
@@ -391,16 +392,19 @@ static void type_match(RCore *core, ut64 addr, char *fcn_name, ut64 baddr, const
 				r_anal_op_free (op);
 				break;
 			}*/
-			RAnalOp *op = r_pvector_at(&anal->esil->trace_vec, j);
 			//RAnalOp *next_op = r_core_anal_op (core, instr_addr + op->size, R_ANAL_OP_MASK_BASIC | R_ANAL_OP_MASK_VAL);
-			RAnalOp *next_op;
+			RAnalOp *next_op = NULL;
 			bool free_next_op = false;
-			if ((j + 1) >= r_pvector_len(&anal->esil->trace_vec)) {
+			if ((j + 1) < r_pvector_len(&anal->esil->trace_vec)) {
+				next_op = r_pvector_at(&anal->esil->trace_vec, j + 1);
+				if (next_op->addr != op->addr + op->size) {
+					eprintf("WTF FUCK %016x != %016x + %016x\n", next_op->addr, op->addr, op->size);
+					next_op = NULL;
+				}
+			}
+			if (!next_op) {
 				next_op = r_core_anal_op(core, op->addr + op->size, R_ANAL_OP_MASK_BASIC | R_ANAL_OP_MASK_VAL);
 				free_next_op = true;
-			}
-			else {
-				next_op = r_pvector_at(&anal->esil->trace_vec, j + 1);
 			}
 			if (!next_op || (j != idx && (next_op->type == R_ANAL_OP_TYPE_CALL
 							|| next_op->type == R_ANAL_OP_TYPE_JMP))) {
@@ -650,6 +654,10 @@ R_API void r_core_anal_type_match(RCore *core, RAnalFunction *fcn) {
 					if (!strcmp (fcn_name, "__stack_chk_fail")) {
 						const char *query = sdb_fmt ("%d.addr", cur_idx - 1);
 						ut64 mov_addr = sdb_num_get (trace, query, 0);
+						RAnalOp *ttttt = r_pvector_at (&core->anal->esil->trace_vec, cur_idx - 1);
+						if (mov_addr != ttttt->addr) {
+							eprintf ("FUCKKKKK\n");
+						}
 						RAnalOp *mop = r_core_anal_op (core, mov_addr, R_ANAL_OP_MASK_VAL | R_ANAL_OP_MASK_BASIC);
 						if (mop) {
 							RAnalVar *mopvar = r_anal_get_used_function_var (anal, mop->addr);
@@ -862,5 +870,6 @@ out_function:
 	free (buf);
 	r_cons_break_pop();
 	r_anal_emul_restore (core, hc);
+	r_pvector_clear (&anal->esil->trace_vec);
 	sdb_reset (anal->esil->db_trace);
 }
