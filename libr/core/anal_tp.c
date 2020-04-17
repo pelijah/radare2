@@ -413,7 +413,7 @@ static void type_match(RCore *core, ut64 addr, char *fcn_name, ut64 baddr, const
 				break;
 			}
 			const char *key = NULL;
-			RAnalVar *var = r_anal_get_used_function_var (anal, op->addr);
+			RAnalVar *var = op->var;
 			if (!in_stack) {
 				key = sdb_fmt ("fcn.0x%08"PFMT64x".arg.%s", caddr, place? place: "");
 			} else {
@@ -604,6 +604,7 @@ R_API void r_core_anal_type_match(RCore *core, RAnalFunction *fcn) {
 			if (cur_idx != r_pvector_len (&core->anal->esil->trace_vec) - 1) {
 				eprintf ("FUCK2: sdb idx (%d) != vec last idx (%d)\n", cur_idx, r_pvector_len (&core->anal->esil->trace_vec) - 1);
 			}
+#endif
 			RAnalVar *var = r_anal_get_used_function_var (anal, aop.addr);
 			RAnalOp *next_op = r_core_anal_op (core, addr + ret, R_ANAL_OP_MASK_BASIC); // | _VAL ?
 			ut32 type = aop.type & R_ANAL_OP_TYPE_MASK;
@@ -652,21 +653,32 @@ R_API void r_core_anal_type_match(RCore *core, RAnalFunction *fcn) {
 						free (cc);
 					}
 					if (!strcmp (fcn_name, "__stack_chk_fail")) {
+						RAnalOp *mop = NULL;
+						if (cur_idx - 1 >= r_pvector_len(&core->anal->esil->trace_vec)) {
+							eprintf("cur_idx - 1 (%d) >= vec len (%d)\n", cur_idx - 1, r_pvector_len(&core->anal->esil->trace_vec));
+						}
+						else {
+							mop = r_pvector_at(&core->anal->esil->trace_vec, cur_idx - 1);
+						}
+#if ONLY_TRACE_VEC
+						if (!ttttt) {
+							eprintf("FUCKKKKK\n");
+						}
+#else
 						const char *query = sdb_fmt ("%d.addr", cur_idx - 1);
 						ut64 mov_addr = sdb_num_get (trace, query, 0);
 						RAnalOp *ttttt = r_pvector_at (&core->anal->esil->trace_vec, cur_idx - 1);
 						if (mov_addr != ttttt->addr) {
 							eprintf ("FUCKKKKK\n");
 						}
-						RAnalOp *mop = r_core_anal_op (core, mov_addr, R_ANAL_OP_MASK_VAL | R_ANAL_OP_MASK_BASIC);
-						if (mop) {
-							RAnalVar *mopvar = r_anal_get_used_function_var (anal, mop->addr);
+#endif
+						if (mop && mop->var) {
 							ut32 type = mop->type & R_ANAL_OP_TYPE_MASK;
 							if (type == R_ANAL_OP_TYPE_MOV) {
 								__var_rename (anal, mopvar, "canary", addr);
 							}
 						}
-						r_anal_op_free (mop);
+						//r_anal_op_free (mop);
 					}
 					free (fcn_name);
 				}
