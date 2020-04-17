@@ -398,7 +398,7 @@ static void type_match(RCore *core, ut64 addr, char *fcn_name, ut64 baddr, const
 			if ((j + 1) < r_pvector_len(&anal->esil->trace_vec)) {
 				next_op = r_pvector_at(&anal->esil->trace_vec, j + 1);
 				if (next_op->addr != op->addr + op->size) {
-					eprintf("WTF FUCK %016x != %016x + %016x\n", next_op->addr, op->addr, op->size);
+					//eprintf("WTF FUCK %016x != %016x + %016x\n", next_op->addr, op->addr, op->size);
 					next_op = NULL;
 				}
 			}
