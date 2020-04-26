@@ -296,7 +296,7 @@ static RList *parse_format(RCore *core, char *fmt) {
 #define REGNAME_SIZE 10
 #define MAX_INSTR 5
 
-static void type_match(RCore *core, ut64 addr, char *fcn_name, ut64 baddr, const char* cc,
+static void type_match(RCore *core, char *fcn_name, ut64 addr, ut64 baddr, const char* cc,
 		int prev_idx, bool userfnc, ut64 caddr) {
 	Sdb *trace = core->anal->esil->db_trace;
 	Sdb *TDB = core->anal->sdb_types;
@@ -413,7 +413,7 @@ static void type_match(RCore *core, ut64 addr, char *fcn_name, ut64 baddr, const
 				break;
 			}
 			const char *key = NULL;
-			RAnalVar *var = op->var;
+			RAnalVar *var = r_anal_get_used_function_var(anal, op->addr);
 			if (!in_stack) {
 				key = sdb_fmt ("fcn.0x%08"PFMT64x".arg.%s", caddr, place? place: "");
 			} else {
@@ -446,7 +446,7 @@ static void type_match(RCore *core, ut64 addr, char *fcn_name, ut64 baddr, const
 				}
 				if (var) {
 					if (!userfnc) {
-						__var_retype (anal, var, name, type, addr, memref, false);
+						__var_retype(anal, var, name, type, memref, false);
 						__var_rename (anal, var, name, addr);
 					} else {
 						// Set callee argument info
@@ -462,7 +462,7 @@ static void type_match(RCore *core, ut64 addr, char *fcn_name, ut64 baddr, const
 			if (!res && *regname && SDB_CONTAINS (j, regname)) {
 				if (var) {
 					if (!userfnc) {
-						__var_retype (anal, var, name, type, addr, memref, false);
+						__var_retype(anal, var, name, type, memref, false);
 						__var_rename (anal, var, name, addr);
 					} else {
 						sdb_set (anal->sdb_fcns, key, var->type, 0);
@@ -486,7 +486,7 @@ static void type_match(RCore *core, ut64 addr, char *fcn_name, ut64 baddr, const
 				get_src_regname (core, op->addr, tmp, sizeof (tmp));
 				ut64 ptr = get_addr (trace, tmp, j);
 				if (ptr == xaddr) {
-					__var_retype (anal, var, name, type? type: "int", addr, memref, false);
+					__var_retype(anal, var, name, type ? type : "int", memref, false);
 				}
 			}
 			//r_anal_op_free (op);
@@ -672,8 +672,9 @@ R_API void r_core_anal_type_match(RCore *core, RAnalFunction *fcn) {
 							eprintf ("FUCKKKKK\n");
 						}
 #endif
-						if (mop && mop->var) {
+						if (mop) {
 							ut32 type = mop->type & R_ANAL_OP_TYPE_MASK;
+							RAnalVar *mopvar = r_anal_get_used_function_var (anal, mop->addr);
 							if (type == R_ANAL_OP_TYPE_MOV) {
 								__var_rename (anal, mopvar, "canary", addr);
 							}
@@ -851,7 +852,6 @@ R_API void r_core_anal_type_match(RCore *core, RAnalFunction *fcn) {
 			}
 		}
 		free (type);
-		r_anal_var_free (lvar);
 	}
 	r_list_free (list);
 	// Type propgation from caller to callee function for stack based arguments
