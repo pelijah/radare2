@@ -667,8 +667,7 @@ R_API void r_core_anal_type_match(RCore *core, RAnalFunction *fcn) {
 #else
 						const char *query = sdb_fmt ("%d.addr", cur_idx - 1);
 						ut64 mov_addr = sdb_num_get (trace, query, 0);
-						RAnalOp *ttttt = r_pvector_at (&core->anal->esil->trace_vec, cur_idx - 1);
-						if (ttttt && mov_addr != ttttt->addr) {
+						if (mop && mov_addr != mop->addr) {
 							eprintf ("FUCKKKKK\n");
 						}
 #endif
