@@ -691,7 +691,7 @@ R_API void r_core_anal_type_match(RCore *core, RAnalFunction *fcn) {
 				get_src_regname (core, aop.addr, src, sizeof (src));
 				if (ret_reg && *src && strstr (ret_reg, src)) {
 					if (var && aop.direction == R_ANAL_OP_DIR_WRITE) {
-						__var_retype (anal, var, NULL, ret_type, addr, false, false);
+						__var_retype (anal, var, NULL, ret_type, false, false);
 						resolved = true;
 					} else if (type == R_ANAL_OP_TYPE_MOV) {
 						R_FREE (ret_reg);
