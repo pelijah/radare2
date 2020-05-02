@@ -89,7 +89,7 @@ static int trace_hook_mem_write(RAnalEsil *esil, ut64 addr, const ut8 *buf, int 
 	return ret;
 }
 
-R_API void r_anal_esil_trace (RAnalEsil *esil, RAnalOp *op) {
+R_API void r_anal_esil_trace (RAnalEsil *esil, RAnalOp *op, bool cache_op) {
 	if (!esil || !op) {
 		return;
 	}
