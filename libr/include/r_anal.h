@@ -1208,6 +1208,29 @@ typedef struct r_anal_esil_dfg_node_t {
 	RAnalEsilDFGBlockType type;
 } RAnalEsilDFGNode;
 
+struct r_anal_esil_trace_mem_rw_t {
+	ut64 addr;
+	void *val;
+};
+
+struct r_anal_esil_trace_reg_rw_t {
+	const char *name;
+	ut64 val;
+};
+
+typedef struct r_anal_esil_trace_entry_t {
+	ut64 addr;
+	size_t op_size;
+	int n_mem_rd;
+	int n_mem_wr;
+	int n_reg_rd;
+	int n_reg_wr;
+	struct r_anal_esil_trace_mem_rw_t mem_rd[32];
+	struct r_anal_esil_trace_mem_rw_t mem_wr[32];
+	struct r_anal_esil_trace_reg_rw_t reg_rd[32];
+	struct r_anal_esil_trace_reg_rw_t reg_wr[32];
+} RAnalEsilTraceEntry;
+
 typedef int (*RAnalCmdExt)(/* Rcore */RAnal *anal, const char* input);
 
 // TODO: rm data + len

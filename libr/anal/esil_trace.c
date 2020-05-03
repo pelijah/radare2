@@ -10,6 +10,16 @@
 static int ocbs_set = false;
 static RAnalEsilCallbacks ocbs = {0};
 
+static int indexof_reg_rw(struct r_anal_esil_trace_reg_rw_t *e, int max, const char *name) {
+	int i;
+	for (i = 0; i < max; i++) {
+		if (!strcmp (e[i].name, name)) {
+			return i;
+		}
+	}
+	return max;
+}
+
 static int trace_hook_reg_read(RAnalEsil *esil, const char *name, ut64 *res, int *size) {
 	int ret = 0;
 	if (*name == '0') {
@@ -28,8 +38,24 @@ static int trace_hook_reg_read(RAnalEsil *esil, const char *name, ut64 *res, int
 	if (ret) {
 		ut64 val = *res;
 		//eprintf ("[ESIL] REG READ %s 0x%08"PFMT64x"\n", name, val);
-		sdb_array_add (DB, KEY ("reg.read"), name, 0);
-		sdb_num_set (DB, KEYREG ("reg.read", name), val, 0);
+		//sdb_array_add (DB, KEY ("reg.read"), name, 0);
+		//sdb_num_set (DB, KEYREG ("reg.read", name), val, 0);
+		RAnalEsilTraceEntry *entry = r_pvector_at (&esil->trace_vec, esil->trace_idx);
+		if (entry) {
+			int idx = indexof_reg_rw (entry->reg_rd, entry->n_reg_rd, name);
+			if (idx < R_ARRAY_SIZE (entry->reg_rd)) {
+				free (entry->reg_rd[idx].name);
+				entry->reg_rd[idx].name = strdup (name);
+				entry->reg_rd[idx].val = val;
+				if (idx == entry->n_reg_rd) {
+					entry->n_reg_rd++;
+				}
+			} else {
+				eprintf ("n_reg_rd overflow for op at %016x\n", entry->addr);
+			}
+		} else {
+			eprintf ("empty trace entry\n");
+		}
 	} //else {
 		//eprintf ("[ESIL] REG READ %s FAILED\n", name);
 	//}
@@ -39,8 +65,24 @@ static int trace_hook_reg_read(RAnalEsil *esil, const char *name, ut64 *res, int
 static int trace_hook_reg_write(RAnalEsil *esil, const char *name, ut64 *val) {
 	int ret = 0;
 	//eprintf ("[ESIL] REG WRITE %s 0x%08"PFMT64x"\n", name, *val);
-	sdb_array_add (DB, KEY ("reg.write"), name, 0);
-	sdb_num_set (DB, KEYREG ("reg.write", name), *val, 0);
+	RAnalEsilTraceEntry *entry = r_pvector_at (&esil->trace_vec, esil->trace_idx);
+	if (entry) {
+		int idx = indexof_reg_rw (entry->reg_wr, entry->n_reg_wr, name);
+		if (idx < R_ARRAY_SIZE (entry->reg_wr)) {
+			free (entry->reg_wr[idx].name);
+			entry->reg_wr[idx].name = strdup (name);
+			entry->reg_wr[idx].val = *val;
+			if (idx == entry->n_reg_wr) {
+				entry->n_reg_wr++;
+			}
+		} else {
+			eprintf ("n_reg_wr overflow for op at %016x\n", entry->addr);
+		}
+	} else {
+		eprintf ("empty trace entry\n");
+	}
+	//sdb_array_add (DB, KEY ("reg.write"), name, 0);
+	//sdb_num_set (DB, KEYREG ("reg.write", name), *val, 0);
 	if (ocbs.hook_reg_write) {
 		RAnalEsilCallbacks cbs = esil->cb;
 		esil->cb = ocbs;
@@ -50,17 +92,42 @@ static int trace_hook_reg_write(RAnalEsil *esil, const char *name, ut64 *val) {
 	return ret;
 }
 
+static int indexof_mem_rw(struct r_anal_esil_trace_mem_rw_t *e, int max, ut64 addr) {
+	int i;
+	for (i = 0; i < max; i++) {
+		if (e[i].addr == addr) {
+			return i;
+		}
+	}
+	return max;
+}
+
 static int trace_hook_mem_read(RAnalEsil *esil, ut64 addr, ut8 *buf, int len) {
-	char *hexbuf = calloc ((1 + len), 4);
+	//char *hexbuf = calloc ((1 + len), 4);
 	int ret = 0;
 	if (esil->cb.mem_read) {
 		ret = esil->cb.mem_read (esil, addr, buf, len);
 	}
-	sdb_array_add_num (DB, KEY ("mem.read"), addr, 0);
-	r_hex_bin2str (buf, len, hexbuf);
-	sdb_set (DB, KEYAT ("mem.read.data", addr), hexbuf, 0);
+	RAnalEsilTraceEntry *entry = r_pvector_at (&esil->trace_vec, esil->trace_idx);
+	if (entry) {
+		int idx = indexof_mem_rw (entry->mem_rd, entry->n_mem_rd, addr);
+		if (idx < R_ARRAY_SIZE (entry->mem_rd)) {
+			entry->mem_rd[idx].addr = addr;
+			entry->mem_rd[idx].val = buf;
+			if (idx == entry->n_mem_rd) {
+				entry->n_mem_rd++;
+			}
+		} else {
+			eprintf ("n_mem_rd overflow for op at %016x\n", entry->addr);
+		}
+	} else {
+		eprintf ("empty trace entry\n");
+	}
+	//sdb_array_add_num (DB, KEY ("mem.read"), addr, 0);
+	//r_hex_bin2str (buf, len, hexbuf);
+	//sdb_set (DB, KEYAT ("mem.read.data", addr), hexbuf, 0);
 	//eprintf ("[ESIL] MEM READ 0x%08"PFMT64x" %s\n", addr, hexbuf);
-	free (hexbuf);
+	//free (hexbuf);
 
 	if (ocbs.hook_mem_read) {
 		RAnalEsilCallbacks cbs = esil->cb;
@@ -73,12 +140,27 @@ static int trace_hook_mem_read(RAnalEsil *esil, ut64 addr, ut8 *buf, int len) {
 
 static int trace_hook_mem_write(RAnalEsil *esil, ut64 addr, const ut8 *buf, int len) {
 	int ret = 0;
-	char *hexbuf = malloc ((1+len)*3);
-	sdb_array_add_num (DB, KEY ("mem.write"), addr, 0);
-	r_hex_bin2str (buf, len, hexbuf);
-	sdb_set (DB, KEYAT ("mem.write.data", addr), hexbuf, 0);
+	//char *hexbuf = malloc ((1+len)*3);
+	//sdb_array_add_num (DB, KEY ("mem.write"), addr, 0);
+	//r_hex_bin2str (buf, len, hexbuf);
+	//sdb_set (DB, KEYAT ("mem.write.data", addr), hexbuf, 0);
 	//eprintf ("[ESIL] MEM WRITE 0x%08"PFMT64x" %s\n", addr, hexbuf);
-	free (hexbuf);
+	//free (hexbuf);
+	RAnalEsilTraceEntry *entry = r_pvector_at (&esil->trace_vec, esil->trace_idx);
+	if (entry) {
+		int idx = indexof_mem_rw (entry->mem_wr, entry->n_mem_wr, addr);
+		if (idx < R_ARRAY_SIZE (entry->mem_wr)) {
+			entry->mem_wr[idx].addr = addr;
+			entry->mem_wr[idx].val = buf;
+			if (idx == entry->n_mem_wr) {
+				entry->n_mem_wr++;
+			}
+		} else {
+			eprintf ("n_mem_wr overflow for op at %016x\n", entry->addr);
+		}
+	} else {
+		eprintf ("empty trace entry\n");
+	}
 
 	if (ocbs.hook_mem_write) {
 		RAnalEsilCallbacks cbs = esil->cb;
@@ -89,7 +171,7 @@ static int trace_hook_mem_write(RAnalEsil *esil, ut64 addr, const ut8 *buf, int 
 	return ret;
 }
 
-R_API void r_anal_esil_trace (RAnalEsil *esil, RAnalOp *op, bool cache_op) {
+R_API void r_anal_esil_trace (RAnalEsil *esil, RAnalOp *op) {
 	if (!esil || !op) {
 		return;
 	}
@@ -107,7 +189,14 @@ R_API void r_anal_esil_trace (RAnalEsil *esil, RAnalOp *op, bool cache_op) {
 	if (!DB) {
 		DB = sdb_new0 ();
 	}
-	r_pvector_push (&esil->trace_vec, op);
+	RAnalEsilTraceEntry *entry = R_NEW0 (RAnalEsilTraceEntry);
+	if (entry) {
+		entry->addr = op->addr;
+		entry->op_size = op->size;
+	} else {
+		eprintf ("Failed to allocate memory for trace entry\n");
+	}
+	r_pvector_push (&esil->trace_vec, entry);
 //	sdb_set (DB, KEY ("opcode"), op->mnemonic, 0);
 //	sdb_set (DB, KEY ("addr"), expr, 0);
 
