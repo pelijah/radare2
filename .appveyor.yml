@@ -98,7 +98,7 @@ for:
       - radare2 -v
       - cd test
       - git clone -q --depth 1 https://github.com/radareorg/radare2-testbins bins
-      - r2r -L db -j 64
+      - r2r -j 64 -L db
       - cd ..
 
     after_test:
